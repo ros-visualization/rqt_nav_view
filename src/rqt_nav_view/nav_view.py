@@ -173,8 +173,11 @@ class NavView(QGraphicsView):
         self._map = None
         self._map_item = None
 
-        self.w = 0
-        self.h = 0
+        self.map_width = 0
+        self.map_height = 0
+        self.map_resolution = 0
+        self.map_origin = None
+        self.frame_id = ""
 
         self._paths = {}
         self._polygons = {}
@@ -238,23 +241,25 @@ class NavView(QGraphicsView):
             self.scale(0.85, 0.85)
 
     def map_cb(self, msg):
-        self.resolution = msg.info.resolution
-        self.w = msg.info.width
-        self.h = msg.info.height
+        self.map_resolution = msg.info.resolution
+        self.map_width = msg.info.width
+        self.map_height = msg.info.height
+        self.map_origin = msg.info.origin
+        self.frame_id = msg.header.frame_id
 
         a = numpy.array(msg.data, dtype=numpy.uint8, copy=False, order='C')
-        a = a.reshape((self.h, self.w))
-        if self.w % 4:
-            e = numpy.empty((self.h, 4 - self.w % 4), dtype=a.dtype, order='C')
+        a = a.reshape((self.map_height, self.map_width))
+        if self.map_width % 4:
+            e = numpy.empty((self.map_height, 4 - self.map_width % 4), dtype=a.dtype, order='C')
             a = numpy.append(a, e, axis=1)
-        image = QImage(a.reshape((a.shape[0] * a.shape[1])), self.w, self.h, QImage.Format_Indexed8)
+        image = QImage(a.reshape((a.shape[0] * a.shape[1])), self.map_width, self.map_height, QImage.Format_Indexed8)
 
         for i in reversed(range(101)):
             image.setColor(100 - i, qRgb(i * 2.55, i * 2.55, i * 2.55))
         image.setColor(101, qRgb(255, 0, 0))  # not used indices
         image.setColor(255, qRgb(200, 200, 200))  # color for unknown value -1
         self._map = image
-        self.setSceneRect(0, 0, self.w, self.h)
+        self.setSceneRect(0, 0, self.map_width, self.map_height)
         self.map_changed.emit()
 
     def add_path(self, name):
@@ -267,10 +272,10 @@ class NavView(QGraphicsView):
             pp = QPainterPath()
 
             # Transform everything in to the map frame
-            if not (msg.header.frame_id == '/map' or msg.header.frame_id == ''):
+            if not (msg.header.frame_id == self.frame_id or msg.header.frame_id == ''):
                 try:
-                    self._tf.waitForTransform(msg.header.frame_id, '/map', rospy.Time(), rospy.Duration(10))
-                    data = [self._tf.transformPose('/map', pose) for pose in msg.poses]
+                    self._tf.waitForTransform(msg.header.frame_id, self.frame_id, rospy.Time(), rospy.Duration(10))
+                    data = [self._tf.transformPose(self.frame_id, pose) for pose in msg.poses]
                 except tf.Exception:
                     rospy.logerr("TF Error")
                     data = []
@@ -279,11 +284,11 @@ class NavView(QGraphicsView):
 
             if len(data) > 0:
                 start = data[0].pose.position
-                pp.moveTo(start.x / self.resolution, start.y / self.resolution)
+                pp.moveTo(start.x / self.map_resolution, start.y / self.map_resolution)
 
                 for pose in data:
                     pt = pose.pose.position
-                    pp.lineTo(pt.x / self.resolution, pt.y / self.resolution)
+                    pp.lineTo(pt.x / self.map_resolution, pt.y / self.map_resolution)
 
                 path.path = pp
                 self.path_changed.emit(name)
@@ -303,9 +308,9 @@ class NavView(QGraphicsView):
             if not self._map:
                 return
 
-            if not (msg.header.frame_id == '/map' or msg.header.frame_id == ''):
+            if not (msg.header.frame_id == self.frame_id or msg.header.frame_id == ''):
                 try:
-                    self._tf.waitForTransform(msg.header.frame_id, '/map', rospy.Time(), rospy.Duration(10))
+                    self._tf.waitForTransform(msg.header.frame_id, self.frame_id, rospy.Time(), rospy.Duration(10))
                     points_stamped = []
                     for pt in msg.polygon.points:
                         ps = PointStamped()
@@ -315,7 +320,7 @@ class NavView(QGraphicsView):
 
                         points_stamped.append(ps)
 
-                    trans_pts = [self._tf.transformPoint('/map', pt).point for pt in points_stamped]
+                    trans_pts = [self._tf.transformPoint(self.frame_id, pt).point for pt in points_stamped]
                 except tf.Exception:
                     rospy.logerr("TF Error")
                     trans_pts = []
@@ -323,10 +328,10 @@ class NavView(QGraphicsView):
                 trans_pts = [pt for pt in msg.polygon.points]
 
             if len(trans_pts) > 0:
-                pts = [QPointF(pt.x / self.resolution, pt.y / self.resolution) for pt in trans_pts]
+                pts = [QPointF(pt.x / self.map_resolution, pt.y / self.map_resolution) for pt in trans_pts]
 
                 close = trans_pts[0]
-                pts.append(QPointF(close.x / self.resolution, close.y / self.resolution))
+                pts.append(QPointF(close.x / self.map_resolution, close.y / self.map_resolution))
                 poly.path = QPolygonF(pts)
 
                 self.polygon_changed.emit(name)
@@ -378,7 +383,8 @@ class NavView(QGraphicsView):
         else:
             x = self.drag_start[0]
 
-        map_p = [x * self.resolution, self.drag_start[1] * self.resolution]
+        # Orientation might need to be taken into account
+        map_p = [x * self.map_resolution, y * self.map_resolution]
 
         angle = atan2(u[0], u[1])
         quat = quaternion_from_euler(0, 0, angle)
