@@ -409,44 +409,35 @@ class NavView(QGraphicsView):
 
     def mouseReleaseEvent(self, e):
         if self._goal_mode:
-            self._goal_mode = False
             map_p, quat = self.draw_position(e)
+            self.goal_mode()  # Disable goal_mode and enable dragging/scrolling again
 
             msg = PoseStamped()
-            msg.header.frame_id = '/map'
+            msg.header.frame_id = self.frame_id
             msg.header.stamp = rospy.Time.now()
 
             msg.pose.position.x = map_p[0]
             msg.pose.position.y = map_p[1]
-            msg.pose.orientation.w = quat[0]
-            msg.pose.orientation.z = quat[3]
+            msg.pose.orientation.z = quat[2]
+            msg.pose.orientation.w = quat[3]
 
             self._goal_pub.publish(msg)
 
         elif self._pose_mode:
-            self._pose_mode = False
             map_p, quat = self.draw_position(e)
+            self.pose_mode()  # Disable pose_mode and enable dragging/scrolling again
 
             msg = PoseWithCovarianceStamped()
-            msg.header.frame_id = '/map'
+            msg.header.frame_id = self.frame_id
             msg.header.stamp = rospy.Time.now()
 
-            #TODO: Is it ok to just ignore the covariance matrix here?
-            msg.pose.pose.orientation.w = quat[0]
-            msg.pose.pose.orientation.z = quat[3]
+            # ToDo: Is it ok to just ignore the covariance matrix here?
+            msg.pose.pose.orientation.z = quat[2]
+            msg.pose.pose.orientation.w = quat[3]
             msg.pose.pose.position.x = map_p[0]
             msg.pose.pose.position.y = map_p[1]
 
             self._pose_pub.publish(msg)
-
-        # Clean up the path
-        if self.last_path:
-            self._scene.removeItem(self.last_path)
-            self.last_path = None
-
-    #def mouseMoveEvent(self, e):
-    #    if e.buttons() == Qt.LeftButton and (self._pose_mode or self._goal_mode):
-    #        map_p, quat = self.draw_position(e)
 
     def close(self):
         if self.map_sub:
