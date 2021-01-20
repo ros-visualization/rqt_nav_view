@@ -82,7 +82,7 @@ class NavViewWidget(QWidget):
 
         self.paths = paths
         self.polygons = polygons
-        self.map = map_topic
+        self.map_topic = map_topic
         self._tf = tf.TransformListener()
 
         self._nav_view = NavView(map_topic, paths, polygons, tf=self._tf, parent=self)
@@ -129,11 +129,11 @@ class NavViewWidget(QWidget):
         topic_type, array = get_field_type(topic_name)
         if not array:
             if topic_type is OccupancyGrid:
-                self.map = topic_name
+                self.map_topic = topic_name
 
                 # Swap out the nav view for one with the new topics
                 self._nav_view.close()
-                self._nav_view = NavView(self.map, self.paths, self.polygons, self._tf, self)
+                self._nav_view = NavView(self.map_topic, self.paths, self.polygons, self._tf, self)
                 self._layout.addWidget(self._nav_view)
             elif topic_type is Path:
                 self.paths.append(topic_name)
@@ -189,7 +189,7 @@ class NavView(QGraphicsView):
             self._tf = tf.TransformListener()
         else:
             self._tf = tf
-        self.map_sub = rospy.Subscriber('/map', OccupancyGrid, self.map_cb)
+        self.map_sub = rospy.Subscriber(map_topic, OccupancyGrid, self.map_cb)
 
         for path in paths:
             self.add_path(path)
