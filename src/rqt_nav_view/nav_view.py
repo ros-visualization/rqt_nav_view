@@ -36,7 +36,7 @@ from tf.transformations import quaternion_from_euler
 
 import numpy
 import random
-from math import sqrt, atan, pi, degrees
+from math import sqrt, atan2, degrees
 
 from nav_msgs.msg import OccupancyGrid, Path
 from geometry_msgs.msg import PolygonStamped, PointStamped, PoseWithCovarianceStamped, PoseStamped
@@ -379,8 +379,8 @@ class NavView(QGraphicsView):
 
         map_p = [x * self.resolution, self.drag_start[1] * self.resolution]
 
-        angle = atan(u[1] / u[0])
-        quat = quaternion_from_euler(0, 0, degrees(angle))
+        angle = atan2(u[0], u[1])
+        quat = quaternion_from_euler(0, 0, angle)
 
         return map_p, quat
 
