@@ -42,10 +42,11 @@ from nav_msgs.msg import OccupancyGrid, Path
 from geometry_msgs.msg import PolygonStamped, PointStamped, PoseWithCovarianceStamped, PoseStamped
 
 from python_qt_binding.QtCore import Signal, Slot, QPointF, qWarning, Qt
-from python_qt_binding.QtGui import QPixmap, QImage, QPainterPath, QPen, QPolygonF, QColor, qRgb
+from python_qt_binding.QtGui import QPixmap, QImage, QPainterPath, QPen, QPolygonF, QColor, qRgb, QTransform
 from python_qt_binding.QtWidgets import QWidget, QGraphicsView, QGraphicsScene, QVBoxLayout, QHBoxLayout, QPushButton
 
 from rqt_py_common.topic_helpers import get_field_type
+
 
 def accepted_topic(topic):
     msg_types = [OccupancyGrid, Path, PolygonStamped, PointStamped]
@@ -488,8 +489,7 @@ class NavView(QGraphicsView):
             self._scene.removeItem(old_item)
 
     def _mirror(self, item):
-        item.scale(-1, 1)
-        item.translate(-self.w, 0)
+        item.setTransform(QTransform().scale(1, -1).translate(0, -self.map_height))
 
     def save_settings(self, plugin_settings, instance_settings):
         # TODO add any settings to be saved
