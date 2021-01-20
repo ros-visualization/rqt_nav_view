@@ -364,29 +364,34 @@ class NavView(QGraphicsView):
             self._goal_mode = False
             self.setDragMode(QGraphicsView.ScrollHandDrag)
 
-    def draw_position(self, e, mirror=True):
+    def draw_position(self, e):
         p = self.mapToScene(e.x(), e.y())
         v = (p.x() - self.drag_start[0], p.y() - self.drag_start[1])
         mag = sqrt(pow(v[0], 2) + pow(v[1], 2))
-        u = (v[0]/mag, v[1]/mag)
-
-        res = (u[0]*20, u[1]*20)
-        path = self._scene.addLine(self.drag_start[0], self.drag_start[1],
-                                   self.drag_start[0] + res[0], self.drag_start[1] + res[1])
+        v = (v[0]/mag, v[1]/mag)  # Normalize diff vector
+        u = (-v[1], v[0])  # Project diff vector to mirrored map
 
         if self.last_path:
             self._scene.removeItem(self.last_path)
             self.last_path = None
-        self.last_path = path
 
-        if mirror:
-            # Mirror point over x axis
-            x = ((self.w / 2) - self.drag_start[0]) + (self.w /2)
-        else:
-            x = self.drag_start[0]
+        res = (v[0]*30, v[1]*30)
+
+        if self._pose_mode:
+            pen = QPen(QColor("red"))
+        elif self._goal_mode:
+            pen = QPen(QColor("green"))
+        pen.setWidth(3)
+        self.last_path = self._scene.addLine(self.drag_start[0], self.drag_start[1],
+                                             self.drag_start[0] + res[0], self.drag_start[1] + res[1], pen)
+
+        # Mirror point over y axis
+        x = self.drag_start[0]
+        y = self.map_height - self.drag_start[1]
 
         # Orientation might need to be taken into account
-        map_p = [x * self.map_resolution, y * self.map_resolution]
+        map_p = [x * self.map_resolution,  + self.map_origin.position.x,
+                 y * self.map_resolution + self.map_origin.position.y]
 
         angle = atan2(u[0], u[1])
         quat = quaternion_from_euler(0, 0, angle)
