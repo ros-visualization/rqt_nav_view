@@ -188,6 +188,8 @@ class NavView(QGraphicsView):
 
         self._scene = QGraphicsScene()
 
+        self.drag_start = None
+
         if tf is None:
             self._tf = tf.TransformListener()
         else:
@@ -388,6 +390,8 @@ class NavView(QGraphicsView):
 
         angle = atan2(u[0], u[1])
         quat = quaternion_from_euler(0, 0, angle)
+
+        self.drag_start = None
 
         return map_p, quat
 
