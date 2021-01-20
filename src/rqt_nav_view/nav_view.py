@@ -36,7 +36,7 @@ from tf.transformations import quaternion_from_euler
 
 import numpy
 import random
-from math import sqrt, atan2, degrees
+from math import sqrt, atan2
 
 from nav_msgs.msg import OccupancyGrid, Path
 from geometry_msgs.msg import PolygonStamped, PointStamped, PoseWithCovarianceStamped, PoseStamped
@@ -65,7 +65,6 @@ class PathInfo(object):
         self.cb = None
         self.path = None
         self.item = None
-
         self.name = name
 
 
@@ -86,7 +85,7 @@ class NavViewWidget(QWidget):
         self.map = map_topic
         self._tf = tf.TransformListener()
 
-        self._nav_view = NavView(map_topic, paths, polygons, tf = self._tf, parent = self)
+        self._nav_view = NavView(map_topic, paths, polygons, tf=self._tf, parent=self)
 
         self._set_pose = QPushButton('Set Pose')
         self._set_pose.clicked.connect(self._nav_view.pose_mode)
@@ -109,7 +108,7 @@ class NavViewWidget(QWidget):
                 return
             item = e.source().selectedItems()[0]
             topic_name = item.data(0, Qt.UserRole)
-            if topic_name == None:
+            if topic_name is None:
                 qWarning('NavView.dragEnterEvent(): not hasattr(item, ros_topic_name_)')
                 return
 
@@ -124,8 +123,8 @@ class NavViewWidget(QWidget):
         if e.mimeData().hasText():
             topic_name = str(e.mimeData().text())
         else:
-            droped_item = e.source().selectedItems()[0]
-            topic_name = str(droped_item.data(0, Qt.UserRole))
+            dropped_item = e.source().selectedItems()[0]
+            topic_name = str(dropped_item.data(0, Qt.UserRole))
 
         topic_type, array = get_field_type(topic_name)
         if not array:
@@ -165,11 +164,10 @@ class NavView(QGraphicsView):
         self._goal_mode = False
         self.last_path = None
 
-
         self.map_changed.connect(self._update)
         self.destroyed.connect(self.close)
 
-        #ScrollHandDrag
+        # ScrollHandDrag
         self.setDragMode(QGraphicsView.ScrollHandDrag)
 
         self._map = None
@@ -212,8 +210,10 @@ class NavView(QGraphicsView):
         # Add drag and drop functionality to all the items in the view
         def c(x, e):
             self.dragEnterEvent(e)
+
         def d(x, e):
             self.dropEvent(e)
+
         item.setAcceptDrops(True)
         item.dragEnterEvent = c
         item.dropEvent = d
@@ -250,7 +250,7 @@ class NavView(QGraphicsView):
         image = QImage(a.reshape((a.shape[0] * a.shape[1])), self.w, self.h, QImage.Format_Indexed8)
 
         for i in reversed(range(101)):
-            image.setColor(100 - i, qRgb(i* 2.55, i * 2.55, i * 2.55))
+            image.setColor(100 - i, qRgb(i * 2.55, i * 2.55, i * 2.55))
         image.setColor(101, qRgb(255, 0, 0))  # not used indices
         image.setColor(255, qRgb(200, 200, 200))  # color for unknown value -1
         self._map = image
@@ -260,7 +260,7 @@ class NavView(QGraphicsView):
     def add_path(self, name):
         path = PathInfo(name)
 
-        def c(msg):
+        def cb(msg):
             if not self._map:
                 return
 
@@ -291,7 +291,7 @@ class NavView(QGraphicsView):
         path.color = random.choice(self._colors)
         self._colors.remove(path.color)
 
-        path.cb = c
+        path.cb = cb
         path.sub = rospy.Subscriber(path.name, Path, path.cb)
 
         self._paths[name] = path
@@ -299,7 +299,7 @@ class NavView(QGraphicsView):
     def add_polygon(self, name):
         poly = PathInfo(name)
 
-        def c(msg):
+        def cb(msg):
             if not self._map:
                 return
 
@@ -334,7 +334,7 @@ class NavView(QGraphicsView):
         poly.color = random.choice(self._colors)
         self._colors.remove(poly.color)
 
-        poly.cb = c
+        poly.cb = cb
         poly.sub = rospy.Subscriber(poly.name, PolygonStamped, poly.cb)
 
         self._polygons[name] = poly
@@ -492,9 +492,9 @@ class NavView(QGraphicsView):
         item.setTransform(QTransform().scale(1, -1).translate(0, -self.map_height))
 
     def save_settings(self, plugin_settings, instance_settings):
-        # TODO add any settings to be saved
+        # ToDo: add any settings to be saved
         pass
 
     def restore_settings(self, plugin_settings, instance_settings):
-        # TODO add any settings to be restored
+        # ToDO: add any settings to be restored
         pass
