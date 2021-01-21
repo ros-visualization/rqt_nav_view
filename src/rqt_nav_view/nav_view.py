@@ -286,11 +286,11 @@ class NavView(QGraphicsView):
 
             if len(data) > 0:
                 start = data[0].pose.position
-                pp.moveTo(start.x / self.map_resolution, start.y / self.map_resolution)
+                pp.moveTo(*self.point_map_to_qt((start.x, start.y)))
 
                 for pose in data:
                     pt = pose.pose.position
-                    pp.lineTo(pt.x / self.map_resolution, pt.y / self.map_resolution)
+                    pp.lineTo(*self.point_map_to_qt((pt.x, pt.y)))
 
                 path.path = pp
                 self.path_changed.emit(name)
@@ -322,18 +322,19 @@ class NavView(QGraphicsView):
 
                         points_stamped.append(ps)
 
-                    trans_pts = [self._tf.transformPoint(self.frame_id, pt).point for pt in points_stamped]
+                    trans_pts = []
+                    for pt in points_stamped:
+                        point = self._tf.transformPoint(self.frame_id, pt).point
+                        trans_pts.append((point.x, point.y))
                 except tf.Exception:
                     rospy.logerr("TF Error")
                     trans_pts = []
             else:
-                trans_pts = [pt for pt in msg.polygon.points]
+                trans_pts = [(pt.x, pt.y) for pt in msg.polygon.points]
 
             if len(trans_pts) > 0:
-                pts = [QPointF(pt.x / self.map_resolution, pt.y / self.map_resolution) for pt in trans_pts]
-
-                close = trans_pts[0]
-                pts.append(QPointF(close.x / self.map_resolution, close.y / self.map_resolution))
+                trans_pts.append(trans_pts[0])
+                pts = [QPointF(*self.point_map_to_qt(pt)) for pt in trans_pts]
                 poly.path = QPolygonF(pts)
 
                 self.polygon_changed.emit(name)
@@ -385,13 +386,7 @@ class NavView(QGraphicsView):
         self.last_path = self._scene.addLine(self.drag_start[0], self.drag_start[1],
                                              self.drag_start[0] + res[0], self.drag_start[1] + res[1], pen)
 
-        # Mirror point over y axis
-        x = self.drag_start[0]
-        y = self.map_height - self.drag_start[1]
-
-        # Orientation might need to be taken into account
-        map_p = [x * self.map_resolution,  + self.map_origin.position.x,
-                 y * self.map_resolution + self.map_origin.position.y]
+        map_p = self.point_qt_to_map(self.drag_start)
 
         angle = atan2(u[0], u[1])
         quat = quaternion_from_euler(0, 0, angle)
@@ -473,10 +468,8 @@ class NavView(QGraphicsView):
         if name in self._paths.keys():
             old_item = self._paths[name].item
 
-        self._paths[name].item = self._scene.addPath(self._paths[name].path, pen=QPen(QColor(*self._paths[name].color)))
-
-        # Everything must be mirrored
-        self._mirror(self._paths[name].item)
+        self._paths[name].item = self._scene.addPath(self._paths[name].path,
+                                                     pen=QPen(QColor(*self._paths[name].color)))
 
         if old_item:
             self._scene.removeItem(old_item)
@@ -486,16 +479,48 @@ class NavView(QGraphicsView):
         if name in self._polygons.keys():
             old_item = self._polygons[name].item
 
-        self._polygons[name].item = self._scene.addPolygon(self._polygons[name].path, pen=QPen(QColor(*self._polygons[name].color)))
-
-        # Everything must be mirrored
-        self._mirror(self._polygons[name].item)
+        self._polygons[name].item = self._scene.addPolygon(self._polygons[name].path,
+                                                           pen=QPen(QColor(*self._polygons[name].color)))
 
         if old_item:
             self._scene.removeItem(old_item)
 
     def _mirror(self, item):
+        """
+        Mirror any QItem to have correct orientation
+        :param item:
+        :return:
+        """
         item.setTransform(QTransform().scale(1, -1).translate(0, -self.map_height))
+
+    def point_qt_to_map(self, point):
+        """
+        Convert point from Qt to map coordinates
+
+        :param point: tuple or list
+        :return: map point
+        """
+        # Mirror point over y axis
+        x = point[0]
+        y = self.map_height - point[1]
+
+        # Orientation might need to be taken into account
+        return [x * self.map_resolution + self.map_origin.position.x,
+                y * self.map_resolution + self.map_origin.position.y]
+
+    def point_map_to_qt(self, point):
+        """
+        Convert point from map to qt coordinates
+
+        :param point: tuple or list
+        :return: map point
+        """
+        # Orientation might need to be taken into account
+        x = (point[0] - self.map_origin.position.x) / self.map_resolution
+        y = (point[1] - self.map_origin.position.y) / self.map_resolution
+
+        # Mirror point over y axis
+        return [x, self.map_height - y]
 
     def save_settings(self, plugin_settings, instance_settings):
         # ToDo: add any settings to be saved
