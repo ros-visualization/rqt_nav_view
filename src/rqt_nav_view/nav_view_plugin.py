@@ -51,3 +51,6 @@ class NavViewPlugin(Plugin):
 
     def restore_settings(self, plugin_settings, instance_settings):
         self._widget.restore_settings(plugin_settings, instance_settings)
+
+    def trigger_configuration(self):
+        self._widget.trigger_configuration()

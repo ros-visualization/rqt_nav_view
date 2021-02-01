@@ -33,6 +33,7 @@
 import rospy
 import tf
 from tf.transformations import quaternion_from_euler
+import rostopic
 
 import numpy
 import random
@@ -47,6 +48,8 @@ from python_qt_binding.QtWidgets import QWidget, QGraphicsView, QGraphicsScene, 
     QInputDialog
 
 from rqt_py_common.topic_helpers import get_field_type
+
+from .list_dialog import ListDialog
 
 
 def accepted_topic(topic):
@@ -149,10 +152,84 @@ class NavViewWidget(QWidget):
                 self._nav_view.add_polygon(topic_name)
 
     def save_settings(self, plugin_settings, instance_settings):
-        self._nav_view.save_settings(plugin_settings, instance_settings)
+        instance_settings.set_value("map_topic", self.map_topic)
+        instance_settings.set_value("paths", self.paths)
+        instance_settings.set_value("polygons", self.polygons)
 
     def restore_settings(self, plugin_settings, instance_settings):
-        self._nav_view.restore_settings(plugin_settings, instance_settings)
+        try:
+            self.map_topic = instance_settings.value("map_topic")
+        except Exception:
+            pass
+
+        try:
+            paths = instance_settings.value("paths")
+            if paths is None:
+                paths = []
+            self.paths = paths
+        except Exception:
+            pass
+
+        try:
+            polygons = instance_settings.value("polygons")
+            if polygons is None:
+                polygons = []
+            self.polygons = polygons
+        except Exception:
+            pass
+
+        self.new_nav_view()
+
+    def trigger_configuration(self):
+        """
+        Callback when the configuration button is clicked
+        """
+        changed = False
+        map_topics = sorted(rostopic.find_by_type('nav_msgs/OccupancyGrid'))
+        try:
+            index = map_topics.index(self.map_topic)
+        except ValueError:
+            index = 0
+        map_topic, ok = QInputDialog.getItem(self, "Select map topic name", "Topic name",
+                                             map_topics, index)
+        if ok:
+            if map_topic != self.map_topic:
+                changed = True
+            self.map_topic = map_topic
+
+        # Paths
+        path_topics = sorted(rostopic.find_by_type('nav_msgs/Path'))
+        path_topics = [(topic, topic in self.paths) for topic in path_topics]
+        dialog = ListDialog("Select path topic(s)", path_topics, self)
+        paths, ok = dialog.exec_()
+
+        if ok:
+            if not paths:
+                changed = True
+            for p in paths:
+                if p not in self.paths:
+                    changed = True
+                    break
+            self.paths = paths
+
+        # Polygons
+        polygon_topics = sorted(rostopic.find_by_type('geometry_msgs/PolygonStamped'))
+        polygon_topics = [(topic, topic in self.polygons) for topic in polygon_topics]
+        dialog = ListDialog("Select polygon topic(s)", polygon_topics, self)
+        polygons, ok = dialog.exec_()
+
+        if ok:
+            if not polygons:
+                changed = True
+            for p in polygons:
+                if p not in self.polygons:
+                    changed = True
+                    break
+            self.polygons = polygons
+
+        if changed:
+            rospy.logdebug("New configuration is different, creating a new nav_view")
+            self.new_nav_view()
 
 
 class NavView(QGraphicsView):
@@ -536,11 +613,3 @@ class NavView(QGraphicsView):
 
         # Mirror point over y axis
         return [x, self.map_height - y]
-
-    def save_settings(self, plugin_settings, instance_settings):
-        # ToDo: add any settings to be saved
-        pass
-
-    def restore_settings(self, plugin_settings, instance_settings):
-        # ToDO: add any settings to be restored
-        pass
