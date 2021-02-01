@@ -70,10 +70,13 @@ class PathInfo(object):
 
 class NavViewWidget(QWidget):
 
-    def __init__(self, map_topic='/map',
-                 paths=['/move_base/NavFn/plan', '/move_base/TrajectoryPlannerROS/local_plan'],
-                 polygons=['/move_base/local_costmap/robot_footprint']):
+    def __init__(self, map_topic='/map', paths=None, polygons=None):
         super(NavViewWidget, self).__init__()
+        if paths is None:
+            paths = ['/move_base/NavFn/plan', '/move_base/TrajectoryPlannerROS/local_plan']
+        if polygons is None:
+            polygons = ['/move_base/local_costmap/robot_footprint']
+
         self._layout = QVBoxLayout()
         self._button_layout = QHBoxLayout()
 
@@ -154,15 +157,21 @@ class NavView(QGraphicsView):
     path_changed = Signal(str)
     polygon_changed = Signal(str)
 
-    def __init__(self, map_topic='/map',
-                 paths=['/move_base/SBPLLatticePlanner/plan', '/move_base/TrajectoryPlannerROS/local_plan'],
-                 polygons=['/move_base/local_costmap/robot_footprint'], tf=None, parent=None):
+    def __init__(self, map_topic='/map', paths=None, polygons=None, tf_listener=None, parent=None):
         super(NavView, self).__init__()
+        if paths is None:
+            paths = ['/move_base/SBPLLatticePlanner/plan', '/move_base/TrajectoryPlannerROS/local_plan']
+        if polygons is None:
+            polygons = ['/move_base/local_costmap/robot_footprint']
+        if tf_listener is None:
+            tf_listener = tf.TransformListener()
+
         self._parent = parent
 
         self._pose_mode = False
         self._goal_mode = False
         self.last_path = None
+        self.drag_start = None
 
         self.map_changed.connect(self._update)
         self.destroyed.connect(self.close)
@@ -188,12 +197,7 @@ class NavView(QGraphicsView):
 
         self._scene = QGraphicsScene()
 
-        self.drag_start = None
-
-        if tf is None:
-            self._tf = tf.TransformListener()
-        else:
-            self._tf = tf
+        self._tf = tf_listener
         self.map_sub = rospy.Subscriber(map_topic, OccupancyGrid, self.map_cb)
 
         for path in paths:
