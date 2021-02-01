@@ -179,6 +179,7 @@ class NavView(QGraphicsView):
         self.setDragMode(QGraphicsView.ScrollHandDrag)
 
         self._map = None
+        self._map_hash = None
         self._map_item = None
 
         self.map_width = 0
@@ -246,6 +247,13 @@ class NavView(QGraphicsView):
             self.scale(0.85, 0.85)
 
     def map_cb(self, msg):
+        map_hash = hash(msg.data)
+        if map_hash == self._map_hash:
+            rospy.logdebug("Skipping map cb, because the map is the same")
+            return
+
+        self._map_hash = map_hash
+
         self.map_resolution = msg.info.resolution
         self.map_width = msg.info.width
         self.map_height = msg.info.height
