@@ -119,7 +119,6 @@ class NavViewWidget(QWidget):
             topic_name = str(e.mimeData().text())
 
         if accepted_topic(topic_name):
-            e.accept()
             e.acceptProposedAction()
 
     def dropEvent(self, e):
