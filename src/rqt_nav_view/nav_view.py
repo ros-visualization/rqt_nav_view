@@ -392,13 +392,12 @@ class NavView(QGraphicsView):
             self._scene.removeItem(self.last_path)
             self.last_path = None
 
-        res = (v[0]*30, v[1]*30)
+        res = (v[0]*25, v[1]*25)
 
         if self._pose_mode:
             pen = QPen(QColor("red"))
         elif self._goal_mode:
             pen = QPen(QColor("green"))
-        pen.setWidth(3)
         self.last_path = self._scene.addLine(self.drag_start[0], self.drag_start[1],
                                              self.drag_start[0] + res[0], self.drag_start[1] + res[1], pen)
 
