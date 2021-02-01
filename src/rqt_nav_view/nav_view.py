@@ -88,21 +88,25 @@ class NavViewWidget(QWidget):
         self.map_topic = map_topic
         self._tf = tf.TransformListener()
 
-        self._nav_view = NavView(map_topic, paths, polygons, tf=self._tf, parent=self)
-
         self._set_pose = QPushButton('Set Pose')
-        self._set_pose.clicked.connect(self._nav_view.pose_mode)
         self._set_goal = QPushButton('Set Goal')
-        self._set_goal.clicked.connect(self._nav_view.goal_mode)
 
         self._button_layout.addWidget(self._set_pose)
         self._button_layout.addWidget(self._set_goal)
 
         self._layout.addLayout(self._button_layout)
 
-        self._layout.addWidget(self._nav_view)
+        self._nav_view = None
 
         self.setLayout(self._layout)
+
+    def new_nav_view(self):
+        if self._nav_view:
+            self._nav_view.close()
+        self._nav_view = NavView(self.map_topic, self.paths, self.polygons, tf_listener=self._tf, parent=self)
+        self._set_pose.clicked.connect(self._nav_view.pose_mode)
+        self._set_goal.clicked.connect(self._nav_view.goal_mode)
+        self._layout.addWidget(self._nav_view)
 
     def dragEnterEvent(self, e):
         if not e.mimeData().hasText():
@@ -134,9 +138,7 @@ class NavViewWidget(QWidget):
                 self.map_topic = topic_name
 
                 # Swap out the nav view for one with the new topics
-                self._nav_view.close()
-                self._nav_view = NavView(self.map_topic, self.paths, self.polygons, self._tf, self)
-                self._layout.addWidget(self._nav_view)
+                self.new_nav_view()
             elif topic_type is Path:
                 self.paths.append(topic_name)
                 self._nav_view.add_path(topic_name)
