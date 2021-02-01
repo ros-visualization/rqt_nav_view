@@ -71,6 +71,7 @@ class ListDialog(QDialog):
             w_item.setFlags(w_item.flags() | Qt.ItemIsUserCheckable)
             w_item.setCheckState(Qt.Checked if item[1] else Qt.Unchecked)
             self._list_widget.addItem(w_item)
+        self._list_widget.setMinimumWidth(self._list_widget.sizeHintForColumn(0) + 5)
 
     @staticmethod
     def highlight_checked(item):
