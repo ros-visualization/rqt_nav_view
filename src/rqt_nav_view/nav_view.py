@@ -43,7 +43,8 @@ from geometry_msgs.msg import PolygonStamped, PointStamped, PoseWithCovarianceSt
 
 from python_qt_binding.QtCore import Signal, Slot, QPointF, qWarning, Qt
 from python_qt_binding.QtGui import QPixmap, QImage, QPainterPath, QPen, QPolygonF, QColor, qRgb, QTransform
-from python_qt_binding.QtWidgets import QWidget, QGraphicsView, QGraphicsScene, QVBoxLayout, QHBoxLayout, QPushButton
+from python_qt_binding.QtWidgets import QWidget, QGraphicsView, QGraphicsScene, QVBoxLayout, QHBoxLayout, QPushButton, \
+    QInputDialog
 
 from rqt_py_common.topic_helpers import get_field_type
 
@@ -111,7 +112,8 @@ class NavViewWidget(QWidget):
     def dragEnterEvent(self, e):
         if not e.mimeData().hasText():
             if not hasattr(e.source(), 'selectedItems') or len(e.source().selectedItems()) == 0:
-                qWarning('NavView.dragEnterEvent(): not hasattr(event.source(), selectedItems) or len(event.source().selectedItems()) == 0')
+                qWarning('NavView.dragEnterEvent(): not hasattr(event.source(), selectedItems) or '
+                         'len(event.source().selectedItems()) == 0')
                 return
             item = e.source().selectedItems()[0]
             topic_name = item.data(0, Qt.UserRole)
@@ -195,7 +197,8 @@ class NavView(QGraphicsView):
         self.path_changed.connect(self._update_path)
         self.polygon_changed.connect(self._update_polygon)
 
-        self._colors = [(238, 34, 116), (68, 134, 252), (236, 228, 46), (102, 224, 18), (242, 156, 6), (240, 64, 10), (196, 30, 250)]
+        self._colors = [(238, 34, 116), (68, 134, 252), (236, 228, 46), (102, 224, 18), (242, 156, 6), (240, 64, 10),
+                        (196, 30, 250)]
 
         self._scene = QGraphicsScene()
 
