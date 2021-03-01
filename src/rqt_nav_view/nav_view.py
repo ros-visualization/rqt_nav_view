@@ -158,23 +158,17 @@ class NavViewWidget(QWidget):
 
     def restore_settings(self, plugin_settings, instance_settings):
         try:
-            self.map_topic = instance_settings.value("map_topic")
+            self.map_topic = instance_settings.value("map_topic", "/map")
         except Exception:
             pass
 
         try:
-            paths = instance_settings.value("paths")
-            if paths is None:
-                paths = []
-            self.paths = paths
+            self.paths = instance_settings.value("paths", [])
         except Exception:
             pass
 
         try:
-            polygons = instance_settings.value("polygons")
-            if polygons is None:
-                polygons = []
-            self.polygons = polygons
+            self.polygons = instance_settings.value("polygons", [])
         except Exception:
             pass
 
