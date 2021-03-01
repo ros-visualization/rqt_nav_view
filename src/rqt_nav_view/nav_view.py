@@ -200,11 +200,10 @@ class NavViewWidget(QWidget):
         if ok:
             if not paths:
                 changed = True
-            for p in paths:
-                if p not in self.paths:
-                    changed = True
-                    break
-            self.paths = paths
+            diff = set(paths).symmetric_difference(set(self.paths))
+            if diff:
+                self.paths = paths
+                changed = True
 
         # Polygons
         polygon_topics = sorted(rostopic.find_by_type('geometry_msgs/PolygonStamped'))
@@ -215,11 +214,10 @@ class NavViewWidget(QWidget):
         if ok:
             if not polygons:
                 changed = True
-            for p in polygons:
-                if p not in self.polygons:
-                    changed = True
-                    break
-            self.polygons = polygons
+            diff = set(polygons).symmetric_difference(set(self.polygons))
+            if diff:
+                self.polygons = polygons
+                changed = True
 
         if changed:
             rospy.logdebug("New configuration is different, creating a new nav_view")
