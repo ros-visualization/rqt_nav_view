@@ -44,7 +44,7 @@ class NavViewPlugin(Plugin):
             self._widget.setWindowTitle(self._widget.windowTitle() + (' (%d)' % context.serial_number()))
         context.add_widget(self._widget)
 
-        self.setObjectName('Naviation View')
+        self.setObjectName('Navigation View')
 
     def save_settings(self, plugin_settings, instance_settings):
         self._widget.save_settings(plugin_settings, instance_settings)
