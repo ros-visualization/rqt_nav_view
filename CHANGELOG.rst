@@ -2,8 +2,8 @@
 Changelog for package rqt_nav_view
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.5.8 (2025-05-05)
+------------------
 * Bump cmake_minimum_required to avoid deprecation (`#11 <https://github.com/ros-visualization/rqt_nav_view/issues/11>`_)
 * Add missing dep on setuptools (`#10 <https://github.com/ros-visualization/rqt_nav_view/issues/10>`_)
 * Add myself as maintainer (`#9 <https://github.com/ros-visualization/rqt_nav_view/issues/9>`_)
