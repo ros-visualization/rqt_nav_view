@@ -2,6 +2,16 @@
 Changelog for package rqt_nav_view
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Bump cmake_minimum_required to avoid deprecation (`#11 <https://github.com/ros-visualization/rqt_nav_view/issues/11>`_)
+* Add missing dep on setuptools (`#10 <https://github.com/ros-visualization/rqt_nav_view/issues/10>`_)
+* Add myself as maintainer (`#9 <https://github.com/ros-visualization/rqt_nav_view/issues/9>`_)
+* Add myself as maintainer (`#8 <https://github.com/ros-visualization/rqt_nav_view/issues/8>`_)
+* Fix and major update (`#7 <https://github.com/ros-visualization/rqt_nav_view/issues/7>`_)
+* fix shebang line for python3
+* Contributors: Arne Hitzmann, Matthijs van der Burgh, Mikael Arguedas, Srishti Dhamija
+
 0.5.7 (2017-04-26)
 ------------------
 
