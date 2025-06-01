@@ -32,11 +32,17 @@
 
 from python_qt_binding.QtCore import Qt
 from python_qt_binding.QtGui import QColor
-from python_qt_binding.QtWidgets import QDialog, QDialogButtonBox, QGroupBox, QHBoxLayout, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
+from python_qt_binding.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QGroupBox,
+    QListWidget,
+    QListWidgetItem,
+    QVBoxLayout,
+)
 
 
 class ListDialog(QDialog):
-
     def __init__(self, title, items, parent):
         super(ListDialog, self).__init__(parent)
 
@@ -45,7 +51,9 @@ class ListDialog(QDialog):
         self._view_box_layout = QVBoxLayout(self._view_box)
         self._list_widget = QListWidget()
         self._view_box_layout.addWidget(self._list_widget)
-        self._button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Close)
+        self._button_box = QDialogButtonBox(
+            QDialogButtonBox.Save | QDialogButtonBox.Close
+        )
         self._button_box.accepted.connect(self.save)
         self._button_box.rejected.connect(self.reject)
 

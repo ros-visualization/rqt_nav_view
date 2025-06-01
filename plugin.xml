@@ -1,7 +1,9 @@
 <library path="src">
-  <class name="NavigationView" type="rqt_nav_view.nav_view_plugin.NavViewPlugin" base_class_type="rqt_gui_py::Plugin">
+  <class name="NavigationView"
+         type="rqt_nav_view.nav_view_plugin.NavViewPlugin"
+         base_class_type="rqt_gui_py::Plugin">
     <description>
-    Display for navigation.
+      Display for navigation.
     </description>
     <qtgui>
       <group>

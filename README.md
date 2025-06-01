@@ -1,4 +1,4 @@
-nav_view
+rqt_nav_view
 =============
 
-RQT plugin to display navigation information(maps/plans). 
+RQT plugin to display navigation information(maps/plans).
