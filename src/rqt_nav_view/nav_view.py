@@ -30,26 +30,63 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-import rospy
-import tf
-from tf.transformations import quaternion_from_euler
-import rostopic
+import rclpy
 
-import numpy
+from tf2_ros import TransformException
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
+
+from rqt_py_common.ini_helper import pack, unpack
+
+import numpy as np
 import random
-from math import sqrt, atan2
+import math as m
+
+# http://github.com/ros2/geometry2/issues/701
+import tf2_geometry_msgs # noqa: F401
 
 from nav_msgs.msg import OccupancyGrid, Path
-from geometry_msgs.msg import PolygonStamped, PointStamped, PoseWithCovarianceStamped, PoseStamped
+from geometry_msgs.msg import (
+    PointStamped,
+    PolygonStamped,
+    PoseStamped,
+    PoseWithCovarianceStamped,
+)
 
 from python_qt_binding.QtCore import Signal, Slot, QPointF, qWarning, Qt
-from python_qt_binding.QtGui import QPixmap, QImage, QPainterPath, QPen, QPolygonF, QColor, qRgb, QTransform
-from python_qt_binding.QtWidgets import QWidget, QGraphicsView, QGraphicsScene, QVBoxLayout, QHBoxLayout, QPushButton, \
-    QInputDialog
+from python_qt_binding.QtGui import (
+    QColor,
+    QImage,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QPolygonF,
+    qRgb,
+    QTransform,
+)
+from python_qt_binding.QtWidgets import (
+    QGraphicsScene,
+    QGraphicsView,
+    QHBoxLayout,
+    QInputDialog,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from rqt_py_common.topic_helpers import get_field_type
 
 from .list_dialog import ListDialog
+
+
+def quaternion_from_yaw(yaw):
+    # quaternion order: x, y, z, w
+    return (
+        0.0,
+        0.0,
+        m.sin(yaw / 2.0),
+        m.cos(yaw / 2.0),
+    )
 
 
 def accepted_topic(topic):
@@ -60,7 +97,6 @@ def accepted_topic(topic):
         return True
     else:
         return False
-
 
 class PathInfo(object):
     def __init__(self, name=None):
@@ -73,27 +109,38 @@ class PathInfo(object):
 
 
 class NavViewWidget(QWidget):
-
-    def __init__(self, map_topic='/map', paths=None, polygons=None):
+    def __init__(
+        self,
+        node,
+        map_topic="/map",
+        path_topics=None,
+        footprint_topics=None,
+    ):
         super(NavViewWidget, self).__init__()
-        if paths is None:
-            paths = ['/move_base/NavFn/plan', '/move_base/TrajectoryPlannerROS/local_plan']
-        if polygons is None:
-            polygons = ['/move_base/local_costmap/robot_footprint']
+
+        if path_topics is None:
+            path_topics = []
+        if footprint_topics is None:
+            footprint_topics = []
+
+        self._node = node
+        self._logger = self._node.get_logger()
+
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self._node)
 
         self._layout = QVBoxLayout()
         self._button_layout = QHBoxLayout()
 
         self.setAcceptDrops(True)
-        self.setWindowTitle('Navigation Viewer')
+        self.setWindowTitle("Navigation Viewer")
 
-        self.paths = paths
-        self.polygons = polygons
-        self.map_topic = map_topic
-        self._tf = tf.TransformListener()
+        self._path_topics = path_topics
+        self._footprint_topics = footprint_topics
+        self._map_topic = map_topic
 
-        self._set_pose = QPushButton('Set Pose')
-        self._set_goal = QPushButton('Set Goal')
+        self._set_pose = QPushButton("Set pose estimation")
+        self._set_goal = QPushButton("Set goal pose")
 
         self._button_layout.addWidget(self._set_pose)
         self._button_layout.addWidget(self._set_goal)
@@ -107,21 +154,34 @@ class NavViewWidget(QWidget):
     def new_nav_view(self):
         if self._nav_view:
             self._nav_view.close()
-        self._nav_view = NavView(self.map_topic, self.paths, self.polygons, tf_listener=self._tf, parent=self)
+        self._nav_view = NavView(
+            self._node,
+            self._tf_buffer,
+            self._map_topic,
+            self._path_topics,
+            self._footprint_topics,
+            tf_listener=self._tf_listener,
+            parent=self,
+        )
         self._set_pose.clicked.connect(self._nav_view.pose_mode)
         self._set_goal.clicked.connect(self._nav_view.goal_mode)
         self._layout.addWidget(self._nav_view)
 
     def dragEnterEvent(self, e):
         if not e.mimeData().hasText():
-            if not hasattr(e.source(), 'selectedItems') or len(e.source().selectedItems()) == 0:
-                qWarning('NavView.dragEnterEvent(): not hasattr(event.source(), selectedItems) or '
-                         'len(event.source().selectedItems()) == 0')
+            if (
+                not hasattr(e.source(), "selectedItems")
+                or len(e.source().selectedItems()) == 0
+            ):
+                qWarning(
+                    "NavView.dragEnterEvent(): not hasattr(event.source(), selectedItems) or "
+                    "len(event.source().selectedItems()) == 0"
+                )
                 return
             item = e.source().selectedItems()[0]
             topic_name = item.data(0, Qt.UserRole)
             if topic_name is None:
-                qWarning('NavView.dragEnterEvent(): not hasattr(item, ros_topic_name_)')
+                qWarning("NavView.dragEnterEvent(): not hasattr(item, ros_topic_name_)")
                 return
 
         else:
@@ -140,87 +200,116 @@ class NavViewWidget(QWidget):
         topic_type, array = get_field_type(topic_name)
         if not array:
             if topic_type is OccupancyGrid:
-                self.map_topic = topic_name
+                self._map_topic = topic_name
 
                 # Swap out the nav view for one with the new topics
                 self.new_nav_view()
             elif topic_type is Path:
-                self.paths.append(topic_name)
+                self._path_topics.append(topic_name)
                 self._nav_view.add_path(topic_name)
             elif topic_type is PolygonStamped:
-                self.polygons.append(topic_name)
+                self._footprint_topics.append(topic_name)
                 self._nav_view.add_polygon(topic_name)
 
     def save_settings(self, plugin_settings, instance_settings):
-        instance_settings.set_value("map_topic", self.map_topic)
-        instance_settings.set_value("paths", self.paths)
-        instance_settings.set_value("polygons", self.polygons)
+        self._logger.info("Saving settings: map_topic={}, paths={}, footprints={}".format(
+            self._map_topic,
+            self._path_topics,
+            self._footprint_topics,
+        ))
+        instance_settings.set_value("map_topic", self._map_topic)
+        instance_settings.set_value("paths", pack(self._path_topics))
+        instance_settings.set_value("footprints", pack(self._footprint_topics))
 
     def restore_settings(self, plugin_settings, instance_settings):
         try:
-            self.map_topic = instance_settings.value("map_topic", "/map")
+            self._map_topic = instance_settings.value("map_topic", "/map")
         except Exception:
             pass
 
         try:
-            self.paths = instance_settings.value("paths", [])
+            self._path_topics = unpack(instance_settings.value("paths", []))
         except Exception:
             pass
 
         try:
-            self.polygons = instance_settings.value("polygons", [])
+            self._footprint_topics = unpack(instance_settings.value("footprints", []))
         except Exception:
             pass
 
+        self._logger.info("Restoring settings: map_topic={}, paths={}, footprints={}".format(
+            self._map_topic,
+            self._path_topics,
+            self._footprint_topics,
+        ))
         self.new_nav_view()
+
+    def find_topic_by_type(self, topic_type):
+        """
+        Find a topic by its type
+        :param topic_type: Type of the topic to find
+        :return: Topic name or None if not found
+        """
+        topics = [
+            topic
+            for topic, types in self._node.get_topic_names_and_types()
+            if topic_type in types
+        ]
+        print("Found topics of type {}: {}".format(topic_type, topics))
+        return topics
 
     def trigger_configuration(self):
         """
         Callback when the configuration button is clicked
         """
         changed = False
-        map_topics = sorted(rostopic.find_by_type('nav_msgs/OccupancyGrid'))
+        map_topics = sorted(self.find_topic_by_type("nav_msgs/msg/OccupancyGrid"))
         try:
-            index = map_topics.index(self.map_topic)
+            index = map_topics.index(self._map_topic)
         except ValueError:
             index = 0
-        map_topic, ok = QInputDialog.getItem(self, "Select map topic name", "Topic name",
-                                             map_topics, index)
+        map_topic, ok = QInputDialog.getItem(
+            self, "Select map topic name", "Topic name", map_topics, index
+        )
         if ok:
-            if map_topic != self.map_topic:
+            if map_topic != self._map_topic:
                 changed = True
-            self.map_topic = map_topic
+            self._map_topic = map_topic
 
         # Paths
-        path_topics = sorted(rostopic.find_by_type('nav_msgs/Path'))
-        path_topics = [(topic, topic in self.paths) for topic in path_topics]
+        path_topics = sorted(self.find_topic_by_type("nav_msgs/msg/Path"))
+        path_topics = [(topic, topic in self._path_topics) for topic in path_topics]
         dialog = ListDialog("Select path topic(s)", path_topics, self)
         paths, ok = dialog.exec_()
 
         if ok:
             if not paths:
                 changed = True
-            diff = set(paths).symmetric_difference(set(self.paths))
+            diff = set(paths).symmetric_difference(set(self._path_topics))
             if diff:
-                self.paths = paths
+                self._path_topics = paths
                 changed = True
 
         # Polygons
-        polygon_topics = sorted(rostopic.find_by_type('geometry_msgs/PolygonStamped'))
-        polygon_topics = [(topic, topic in self.polygons) for topic in polygon_topics]
+        polygon_topics = sorted(self.find_topic_by_type("geometry_msgs/msg/PolygonStamped"))
+        polygon_topics = [
+            (topic, topic in self._footprint_topics) for topic in polygon_topics
+        ]
         dialog = ListDialog("Select polygon topic(s)", polygon_topics, self)
-        polygons, ok = dialog.exec_()
+        footprints, ok = dialog.exec_()
 
         if ok:
-            if not polygons:
+            if not footprints:
                 changed = True
-            diff = set(polygons).symmetric_difference(set(self.polygons))
+            diff = set(footprints).symmetric_difference(set(self._footprint_topics))
             if diff:
-                self.polygons = polygons
+                self._footprint_topics = footprints
                 changed = True
 
         if changed:
-            rospy.logdebug("New configuration is different, creating a new nav_view")
+            self._logger.debug(
+                "New configuration is different, creating a new nav_view"
+            )
             self.new_nav_view()
 
 
@@ -229,21 +318,28 @@ class NavView(QGraphicsView):
     path_changed = Signal(str)
     polygon_changed = Signal(str)
 
-    def __init__(self, map_topic='/map', paths=None, polygons=None, tf_listener=None, parent=None):
+    def __init__(
+        self,
+        node,
+        tf_buffer,
+        map_topic,
+        path_topics,
+        footprint_topics,
+        tf_listener,
+        parent,
+    ):
         super(NavView, self).__init__()
-        if paths is None:
-            paths = ['/move_base/SBPLLatticePlanner/plan', '/move_base/TrajectoryPlannerROS/local_plan']
-        if polygons is None:
-            polygons = ['/move_base/local_costmap/robot_footprint']
-        if tf_listener is None:
-            tf_listener = tf.TransformListener()
 
+        self._node = node
+        self._tf_buffer = tf_buffer
         self._parent = parent
+        self._tf_listener = tf_listener
 
         self._pose_mode = False
         self._goal_mode = False
-        self.last_path = None
-        self.drag_start = None
+
+        self._latest_path = None
+        self._drag_start = None
 
         self.map_changed.connect(self._update)
         self.destroyed.connect(self.close)
@@ -252,40 +348,59 @@ class NavView(QGraphicsView):
         self.setDragMode(QGraphicsView.ScrollHandDrag)
 
         self._map = None
-        self._map_hash = None
         self._map_item = None
 
-        self.map_width = 0
-        self.map_height = 0
-        self.map_resolution = 0
-        self.map_origin = None
-        self.frame_id = ""
+        self._map_width = 0
+        self._map_height = 0
+        self._map_resolution = 0
+        self._map_origin = None
+        self._frame_id = ""
 
         self._paths = {}
         self._polygons = {}
         self.path_changed.connect(self._update_path)
         self.polygon_changed.connect(self._update_polygon)
 
-        self._colors = [(238, 34, 116), (68, 134, 252), (236, 228, 46), (102, 224, 18), (242, 156, 6), (240, 64, 10),
-                        (196, 30, 250)]
+        self._colors = [
+            (238, 34, 116),
+            (68, 134, 252),
+            (236, 228, 46),
+            (102, 224, 18),
+            (242, 156, 6),
+            (240, 64, 10),
+            (196, 30, 250),
+        ]
 
         self._scene = QGraphicsScene()
 
-        self._tf = tf_listener
-        self.map_sub = rospy.Subscriber(map_topic, OccupancyGrid, self.map_cb)
+        qos_profile = rclpy.qos.QoSProfile(
+            reliability=rclpy.qos.QoSReliabilityPolicy.RELIABLE,
+            durability=rclpy.qos.QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            depth=1,
+        )
+        self.map_sub = self._node.create_subscription(
+            OccupancyGrid,
+            map_topic,
+            self.map_callback,
+            qos_profile,
+        )
 
-        for path in paths:
+        for path in path_topics:
             self.add_path(path)
 
-        for poly in polygons:
+        for poly in footprint_topics:
             self.add_polygon(poly)
 
-        try:
-            self._pose_pub = rospy.Publisher('/initialpose', PoseWithCovarianceStamped, queue_size=100)
-            self._goal_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=100)
-        except TypeError:
-            self._pose_pub = rospy.Publisher('/initialpose', PoseWithCovarianceStamped)
-            self._goal_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped)
+        self._pose_pub = self._node.create_publisher(
+            PoseWithCovarianceStamped,
+            "/initialpose",
+            1,
+        )
+        self._goal_pub = self._node.create_publisher(
+            PoseStamped,
+            "/goal_pose",
+            1,
+        )
 
         self.setScene(self._scene)
 
@@ -320,51 +435,61 @@ class NavView(QGraphicsView):
         else:
             self.scale(0.85, 0.85)
 
-    def map_cb(self, msg):
-        map_hash = hash(msg.data)
-        if map_hash == self._map_hash:
-            rospy.logdebug("Skipping map cb, because the map is the same")
-            return
+    def map_callback(self, msg):
+        self._map_resolution = msg.info.resolution
+        self._map_width = msg.info.width
+        self._map_height = msg.info.height
+        self._map_origin = msg.info.origin
+        self._frame_id = msg.header.frame_id
 
-        self._map_hash = map_hash
-
-        self.map_resolution = msg.info.resolution
-        self.map_width = msg.info.width
-        self.map_height = msg.info.height
-        self.map_origin = msg.info.origin
-        self.frame_id = msg.header.frame_id
-
-        a = numpy.array(msg.data, dtype=numpy.uint8, copy=False, order='C')
-        a = a.reshape((self.map_height, self.map_width))
-        if self.map_width % 4:
-            e = numpy.empty((self.map_height, 4 - self.map_width % 4), dtype=a.dtype, order='C')
-            a = numpy.append(a, e, axis=1)
-        image = QImage(a.reshape((a.shape[0] * a.shape[1])), self.map_width, self.map_height, QImage.Format_Indexed8)
+        a = np.array(msg.data, dtype=np.uint8, copy=False, order="C")
+        a = a.reshape((self._map_height, self._map_width))
+        if self._map_width % 4:
+            e = np.empty(
+                (self._map_height, 4 - self._map_width % 4), dtype=a.dtype, order="C"
+            )
+            a = np.append(a, e, axis=1)
+        image = QImage(
+            a.reshape((a.shape[0] * a.shape[1])),
+            self._map_width,
+            self._map_height,
+            QImage.Format_Indexed8,
+        )
 
         for i in reversed(range(101)):
-            image.setColor(100 - i, qRgb(i * 2.55, i * 2.55, i * 2.55))
+            image.setColor(100 - i, qRgb(*(int(x) for x in (i * 2.55, i * 2.55, i * 2.55))))
         image.setColor(101, qRgb(255, 0, 0))  # not used indices
         image.setColor(255, qRgb(200, 200, 200))  # color for unknown value -1
         self._map = image
-        self.setSceneRect(0, 0, self.map_width, self.map_height)
+        self.setSceneRect(0, 0, self._map_width, self._map_height)
         self.map_changed.emit()
 
     def add_path(self, name):
         path = PathInfo(name)
 
-        def cb(msg):
+        def path_callback(msg):
             if not self._map:
                 return
 
             pp = QPainterPath()
 
             # Transform everything in to the map frame
-            if not (msg.header.frame_id == self.frame_id or msg.header.frame_id == ''):
+            if not (msg.header.frame_id == self._frame_id or msg.header.frame_id == ""):
                 try:
-                    self._tf.waitForTransform(msg.header.frame_id, self.frame_id, rospy.Time(), rospy.Duration(10))
-                    data = [self._tf.transformPose(self.frame_id, pose) for pose in msg.poses]
-                except tf.Exception:
-                    rospy.logerr("TF Error")
+                    data = [
+                        self._tf_buffer.transform(
+                            pose,
+                            self._frame_id,
+                            timeout=rclpy.duration.Duration(seconds=10),
+                        )
+                        for pose in msg.poses
+                    ]
+                except TransformException:
+                    self._logger.error(
+                        "Could not convert the {} frame to the map frame {}".format(
+                            msg.header.frame_id, self._frame_id
+                        )
+                    )
                     data = []
             else:
                 data = msg.poses
@@ -383,21 +508,25 @@ class NavView(QGraphicsView):
         path.color = random.choice(self._colors)
         self._colors.remove(path.color)
 
-        path.cb = cb
-        path.sub = rospy.Subscriber(path.name, Path, path.cb)
+        path.cb = path_callback
+        path.sub = self._node.create_subscription(
+            Path,
+            name,
+            path.cb,
+            1,
+        )
 
         self._paths[name] = path
 
     def add_polygon(self, name):
         poly = PathInfo(name)
 
-        def cb(msg):
+        def polygon_callback(msg):
             if not self._map:
                 return
 
-            if not (msg.header.frame_id == self.frame_id or msg.header.frame_id == ''):
+            if not (msg.header.frame_id == self._frame_id or msg.header.frame_id == ""):
                 try:
-                    self._tf.waitForTransform(msg.header.frame_id, self.frame_id, rospy.Time(), rospy.Duration(10))
                     points_stamped = []
                     for pt in msg.polygon.points:
                         ps = PointStamped()
@@ -409,10 +538,18 @@ class NavView(QGraphicsView):
 
                     trans_pts = []
                     for pt in points_stamped:
-                        point = self._tf.transformPoint(self.frame_id, pt).point
+                        point = self._tf_buffer.transform(
+                            pt,
+                            self._frame_id,
+                            timeout=rclpy.duration.Duration(seconds=10),
+                        ).point
                         trans_pts.append((point.x, point.y))
-                except tf.Exception:
-                    rospy.logerr("TF Error")
+                except TransformException:
+                    self._logger.error(
+                        "Could not convert the {} frame to the map frame {}".format(
+                            msg.header.frame_id, self._frame_id
+                        )
+                    )
                     trans_pts = []
             else:
                 trans_pts = [(pt.x, pt.y) for pt in msg.polygon.points]
@@ -427,8 +564,13 @@ class NavView(QGraphicsView):
         poly.color = random.choice(self._colors)
         self._colors.remove(poly.color)
 
-        poly.cb = cb
-        poly.sub = rospy.Subscriber(poly.name, PolygonStamped, poly.cb)
+        poly.cb = polygon_callback
+        poly.sub = self._node.create_subscription(
+            PolygonStamped,
+            name,
+            poly.cb,
+            1,
+        )
 
         self._polygons[name] = poly
 
@@ -452,48 +594,58 @@ class NavView(QGraphicsView):
 
     def draw_position(self, e):
         p = self.mapToScene(e.x(), e.y())
-        v = (p.x() - self.drag_start[0], p.y() - self.drag_start[1])
-        mag = sqrt(pow(v[0], 2) + pow(v[1], 2))
-        v = (v[0]/mag, v[1]/mag)  # Normalize diff vector
+        v = (p.x() - self._drag_start[0], p.y() - self._drag_start[1])
+        mag = m.sqrt(pow(v[0], 2) + pow(v[1], 2))
+        if mag < 1e-6:
+            self._node.get_logger().warning("NavView.draw_position(): Dragging too short, ignoring")
+            return None, None
+        v = (v[0] / mag, v[1] / mag)  # Normalize diff vector
         u = (-v[1], v[0])  # Project diff vector to mirrored map
 
-        if self.last_path:
-            self._scene.removeItem(self.last_path)
-            self.last_path = None
+        if self._latest_path:
+            self._scene.removeItem(self._latest_path)
+            self._latest_path = None
 
-        res = (v[0]*25, v[1]*25)
+        res = (v[0] * 25, v[1] * 25)
 
         if self._pose_mode:
             pen = QPen(QColor("red"))
         elif self._goal_mode:
             pen = QPen(QColor("green"))
-        self.last_path = self._scene.addLine(self.drag_start[0], self.drag_start[1],
-                                             self.drag_start[0] + res[0], self.drag_start[1] + res[1], pen)
+        self._latest_path = self._scene.addLine(
+            self._drag_start[0],
+            self._drag_start[1],
+            self._drag_start[0] + res[0],
+            self._drag_start[1] + res[1],
+            pen,
+        )
 
-        map_p = self.point_qt_to_map(self.drag_start)
+        map_p = self.point_qt_to_map(self._drag_start)
 
-        angle = atan2(u[0], u[1])
-        quat = quaternion_from_euler(0, 0, angle)
+        angle = m.atan2(u[0], u[1])
+        quat = quaternion_from_yaw(angle)
 
-        self.drag_start = None
+        self._drag_start = None
 
         return map_p, quat
 
     def mousePressEvent(self, e):
         if self._goal_mode or self._pose_mode:
             p = self.mapToScene(e.x(), e.y())
-            self.drag_start = (p.x(), p.y())
+            self._drag_start = (p.x(), p.y())
         else:
             super(NavView, self).mousePressEvent(e)
 
     def mouseReleaseEvent(self, e):
         if self._goal_mode:
             map_p, quat = self.draw_position(e)
+            if map_p is None or quat is None:
+                return
             self.goal_mode()  # Disable goal_mode and enable dragging/scrolling again
 
             msg = PoseStamped()
-            msg.header.frame_id = self.frame_id
-            msg.header.stamp = rospy.Time.now()
+            msg.header.frame_id = self._frame_id
+            msg.header.stamp = self._node.get_clock().now().to_msg()
 
             msg.pose.position.x = map_p[0]
             msg.pose.position.y = map_p[1]
@@ -504,11 +656,13 @@ class NavView(QGraphicsView):
 
         elif self._pose_mode:
             map_p, quat = self.draw_position(e)
+            if map_p is None or quat is None:
+                return
             self.pose_mode()  # Disable pose_mode and enable dragging/scrolling again
 
             msg = PoseWithCovarianceStamped()
-            msg.header.frame_id = self.frame_id
-            msg.header.stamp = rospy.Time.now()
+            msg.header.frame_id = self._frame_id
+            msg.header.stamp = self._node.get_clock().now().to_msg()
 
             # ToDo: Is it ok to just ignore the covariance matrix here?
             msg.pose.pose.orientation.z = quat[2]
@@ -520,15 +674,13 @@ class NavView(QGraphicsView):
 
     def close(self):
         if self.map_sub:
-            self.map_sub.unregister()
+            self._node.destroy_subscription(self.map_sub)
         for p in self._paths.values():
             if p.sub:
-                p.sub.unregister()
-
+                self._node.destroy_subscription(p.sub)
         for p in self._polygons.values():
             if p.sub:
-                p.sub.unregister()
-
+                self._node.destroy_subscription(p.sub)
         super(NavView, self).close()
 
     def _update(self):
@@ -552,8 +704,9 @@ class NavView(QGraphicsView):
         if name in self._paths.keys():
             old_item = self._paths[name].item
 
-        self._paths[name].item = self._scene.addPath(self._paths[name].path,
-                                                     pen=QPen(QColor(*self._paths[name].color)))
+        self._paths[name].item = self._scene.addPath(
+            self._paths[name].path, pen=QPen(QColor(*self._paths[name].color))
+        )
 
         if old_item:
             self._scene.removeItem(old_item)
@@ -563,8 +716,9 @@ class NavView(QGraphicsView):
         if name in self._polygons.keys():
             old_item = self._polygons[name].item
 
-        self._polygons[name].item = self._scene.addPolygon(self._polygons[name].path,
-                                                           pen=QPen(QColor(*self._polygons[name].color)))
+        self._polygons[name].item = self._scene.addPolygon(
+            self._polygons[name].path, pen=QPen(QColor(*self._polygons[name].color))
+        )
 
         if old_item:
             self._scene.removeItem(old_item)
@@ -575,7 +729,7 @@ class NavView(QGraphicsView):
         :param item:
         :return:
         """
-        item.setTransform(QTransform().scale(1, -1).translate(0, -self.map_height))
+        item.setTransform(QTransform().scale(1, -1).translate(0, -self._map_height))
 
     def point_qt_to_map(self, point):
         """
@@ -586,11 +740,13 @@ class NavView(QGraphicsView):
         """
         # Mirror point over y axis
         x = point[0]
-        y = self.map_height - point[1]
+        y = self._map_height - point[1]
 
         # Orientation might need to be taken into account
-        return [x * self.map_resolution + self.map_origin.position.x,
-                y * self.map_resolution + self.map_origin.position.y]
+        return [
+            x * self._map_resolution + self._map_origin.position.x,
+            y * self._map_resolution + self._map_origin.position.y,
+        ]
 
     def point_map_to_qt(self, point):
         """
@@ -600,8 +756,8 @@ class NavView(QGraphicsView):
         :return: map point
         """
         # Orientation might need to be taken into account
-        x = (point[0] - self.map_origin.position.x) / self.map_resolution
-        y = (point[1] - self.map_origin.position.y) / self.map_resolution
+        x = (point[0] - self._map_origin.position.x) / self._map_resolution
+        y = (point[1] - self._map_origin.position.y) / self._map_resolution
 
         # Mirror point over y axis
-        return [x, self.map_height - y]
+        return [x, self._map_height - y]
